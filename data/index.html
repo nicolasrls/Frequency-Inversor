@@ -1,0 +1,385 @@
+<!-- © 2026 Desenvolvido por Nícolas Ribeiro L. S. Domiciano -->
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <title>ESP32 c/ Inversor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            background: #111;
+            color: #fff;
+            text-align: center;
+        }
+
+        .card {
+            background: #222;
+            padding: 20px;
+            margin: 15px auto;
+            width: 300px;
+            border-radius: 10px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            /* esquerda fixa, direita flex */
+            gap: 20px;
+            width: 95%;
+            margin: 20px auto;
+        }
+
+        /* Coluna esquerda */
+        .painel-esquerdo {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .graficos-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            /* 2 colunas */
+            gap: 20px;
+            width: 90%;
+            margin: 30px auto;
+        }
+
+        .grafico-container {
+            background: #1b1b1b;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            transition: 0.2s;
+        }
+
+        /* Responsivo (celular) */
+        @media (max-width: 768px) {
+            .graficos-grid {
+                grid-template-columns: 1fr;
+                /* 1 por linha */
+            }
+        }
+
+        button {
+            padding: 10px;
+            margin: 5px;
+            width: 100px;
+        }
+
+        input {
+            width: 80px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Inversor via ESP32</h1>
+
+    <div class="dashboard">
+        <!-- COLUNA ESQUERDA -->
+        <div class="painel-esquerdo">
+            <div class="card">
+                <p>🌡 Temperatura: <span id="temp">--</span> °C</p>
+                <p>💧 Fluxo: <span id="fluxo">--</span> L/min</p>
+                <p>🧪 Densidade: <span id="dens">--</span> kg/m³</p>
+                <p>⚙️ Frequência: <span id="freq">--</span> Hz</p>
+                <p>📌 Status: <span id="status">--</span></p>
+            </div>
+
+            <div class="card">
+                <button onclick="run()">RUN</button>
+                <button onclick="stop()">STOP</button>
+                <br><br>
+                <label for="fluido">Selecione o fluido:</label><br>
+                <select id="fluido">
+                    <option value="glicerina">Glicerina</option>
+                    <option value="agua">Água</option>
+                </select>
+            </div>
+
+            <div class="card">
+                <select id="freqInput">
+                    <option value="10">10 Hz</option>
+                    <option value="15">15 Hz</option>
+                    <option value="20">20 Hz</option>
+                    <option value="25">25 Hz</option>
+                    <option value="30">30 Hz</option>
+                    <option value="35">35 Hz</option>
+                    <option value="40">40 Hz</option>
+                    <option value="45">45 Hz</option>
+                    <option value="50">50 Hz</option>
+                    <option value="55">55 Hz</option>
+                    <option value="60">60 Hz</option>
+                </select>
+                <br><br>
+                <button onclick="setFreq()">SET Hz</button>
+            </div>
+        </div>
+        <div class="painel-graficos">
+            <div class="graficos-grid">
+                <div class="grafico-container">
+                    <canvas id="graficoVazao"></canvas>
+                </div>
+
+                <div class="grafico-container">
+                    <canvas id="graficoFluxoTemp"></canvas>
+                </div>
+
+                <div class="grafico-container">
+                    <canvas id="graficoFluxoTempo"></canvas>
+                </div>
+
+                <div class="grafico-container">
+                    <canvas id="graficoDensidadeTemp"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function calcularDensidade(temp) {
+            let fluido = document.getElementById('fluido').value;
+            if (fluido === 'agua') {
+                return -0.4176 * temp + 1005.3;
+            } else {
+                return -0.654 * temp + 1270;
+            }
+        }
+
+        function updateTelemetry() {
+            fetch('/telemetry')
+                .then(r => r.json())
+                .then(d => {
+                    // Atualiza dados básicos
+                    document.getElementById('temp').innerText = d.temperatura.toFixed(1);
+                    document.getElementById('fluxo').innerText = d.fluxo.toFixed(1);
+                    document.getElementById('freq').innerText = d.frequencia.toFixed(1);
+                    document.getElementById('status').innerText = d.status;
+
+                    // ===== DENSIDADE =====
+                    let densidade = calcularDensidade(d.temperatura);
+                    document.getElementById('dens').innerText = densidade.toFixed(1);
+
+                    // ===== EXTRA (AQUI 👇) =====
+                    let fluido = document.getElementById('fluido').value;
+                    let nome = fluido === 'agua' ? 'Água' : 'Glicerina';
+                    let agora = new Date().toLocaleTimeString();
+                    let fluxoCorrigido = d.fluxo;
+
+                    // ===== GRÁFICO 1 =====
+                    grafico.data.labels.push(d.frequencia);
+                    grafico.data.datasets[0].data.push(fluxoCorrigido);
+
+                    // ===== GRÁFICO 2 =====
+                    grafico2.data.labels.push(d.temperatura);
+                    grafico2.data.datasets[0].data.push(fluxoCorrigido);
+
+                    // ===== GRÁFICO 3 =====
+                    grafico3.data.labels.push(agora);
+                    grafico3.data.datasets[0].data.push(d.fluxo);
+
+                    // ===== GRÁFICO 4 =====
+                    grafico4.data.labels.push(d.temperatura);
+                    grafico4.data.datasets[0].data.push(densidade);
+
+                    // Limite de pontos
+                    const maxPoints = 20;
+
+                    if (grafico.data.labels.length > maxPoints) {
+                        grafico.data.labels.shift();
+                        grafico.data.datasets[0].data.shift();
+                    }
+
+                    if (grafico2.data.labels.length > maxPoints) {
+                        grafico2.data.labels.shift();
+                        grafico2.data.datasets[0].data.shift();
+                    }
+                    if (grafico3.data.labels.length > maxPoints) {
+                        grafico3.data.labels.shift();
+                        grafico3.data.datasets[0].data.shift();
+                    }
+
+                    if (grafico4.data.labels.length > maxPoints) {
+                        grafico4.data.labels.shift();
+                        grafico4.data.datasets[0].data.shift();
+                    }
+
+                    grafico.update();
+                    grafico2.update();
+                    grafico3.update();
+                    grafico4.update();
+                })
+                .catch(err => console.error('Erro:', err));
+        }
+
+        function run() {
+            fetch('/run', { method: 'POST' });
+        }
+
+        function stop() {
+            fetch('/stop', { method: 'POST' });
+        }
+
+        function setFreq() {
+            let v = document.getElementById('freqInput').value;
+            fetch('/setFreq?value=' + v, { method: 'POST' });
+        }
+
+        setInterval(updateTelemetry, 1000);
+        updateTelemetry();
+
+        const ctx = document.getElementById('graficoVazao').getContext('2d');
+        const grafico = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Frequência (Hz)
+                datasets: [{
+                    label: 'Fluxo x Frequência',
+                    data: [], // Fluxo correspondente
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: true
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Frequência (Hz)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Fluxo (L/min)'
+                        },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        const ctx2 = document.getElementById('graficoFluxoTemp').getContext('2d');
+        const grafico2 = new Chart(ctx2, {
+            type: 'line',
+            data: {
+                labels: [], // Temperatura (°C)
+                datasets: [{
+                    label: 'Fluxo x Temperatura',
+                    data: [], // Vazão correspondente
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        display: true
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Temperatura (°C)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Fluxo (L/min)'
+                        },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        const ctx3 = document.getElementById('graficoFluxoTempo').getContext('2d');
+        const grafico3 = new Chart(ctx3, {
+            type: 'line',
+            data: {
+                labels: [], // tempo
+                datasets: [{
+                    label: 'Fluxo x Tempo',
+                    data: [],
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                animation: false, // 🔥 importante pra tempo real
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Tempo'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Fluxo (L/min)'
+                        },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        const ctx4 = document.getElementById('graficoDensidadeTemp').getContext('2d');
+        const grafico4 = new Chart(ctx4, {
+            type: 'line',
+            data: {
+                labels: [], // temperatura
+                datasets: [{
+                    label: 'Densidade x Temperatura',
+                    data: [],
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Temperatura (°C)'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Densidade (kg/m³)'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+
+<footer>
+    <p>&copy; 2026 Desenvolvido por Nícolas Ribeiro L. S. Domiciano.</p>
+</footer>
+
+</html>
+
+<!-- © 2026 Desenvolvido por Nícolas Ribeiro L. S. Domiciano -->
