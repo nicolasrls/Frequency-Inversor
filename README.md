@@ -18,7 +18,6 @@ O projeto foi desenvolvido com o objetivo de automatizar um sistema de bombeamen
 - Inversor de Frequência
 - Sensor de Temperatura
 - Sensor de Fluxo/Vazão
-- Módulo Relé (quando aplicável)
 - Fonte de Alimentação
 
 ## Tecnologias Utilizadas
